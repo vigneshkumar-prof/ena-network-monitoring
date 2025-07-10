@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Deploys an EC2 instance with a cron-based script to push ENA metrics
+  (like bandwidth and PPS allowance exceeded) to CloudWatch.
+
+Parameters:
+  KeyName:
+    Type: String
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where the instance will be launched
+  AMIId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0b09627181c8d5778  # Amazon Linux 2 - Mumbai (ap-south-1)
+    Description: AMI ID for EC2 instance
+
+Resources:
+  ENAMetricsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AllowPutMetricData
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  ENAMetricsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: ENAMetricsRole
+
+  ENAMetricsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH access
+      VpcId:
+        Ref: VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  ENAMetricsInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.nano
+      KeyName:
+        Ref: KeyName
+      IamInstanceProfile:
+        Ref: ENAMetricsInstanceProfile
+      ImageId:
+        Ref: AMIId
+      SecurityGroupIds:
+        - Ref: ENAMetricsSecurityGroup
+      Tags:
+        - Key: Name
+          Value: ENA-Metrics-Instance
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            yum update -y
+            yum install -y aws-cli ethtool cronie
+            systemctl start crond
+            systemctl enable crond
+
+            cat << 'EOF' > /home/ec2-user/push-ena-metrics.sh
+            #!/bin/bash
+            INTERFACE="ens5"
+            NAMESPACE="EC2/ENA"
+            REGION="ap-south-1"
+            INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+            METRICS=("bw_in_allowance_exceeded" "bw_out_allowance_exceeded" "pps_allowance_exceeded" "conntrack_allowance_exceeded" "linklocal_allowance_exceeded")
+
+            for METRIC_NAME in "${METRICS[@]}"; do
+              VALUE=$(ethtool -S $INTERFACE | grep "$METRIC_NAME" | awk '{print $2}')
+              if [ ! -z "$VALUE" ]; then
+                aws cloudwatch put-metric-data \
+                  --metric-name "$METRIC_NAME" \
+                  --namespace "$NAMESPACE" \
+                  --value "$VALUE" \
+                  --dimensions InstanceId="$INSTANCE_ID" \
+                  --region "$REGION"
+                echo "Pushed $METRIC_NAME = $VALUE"
+              else
+                echo "Metric $METRIC_NAME not found"
+              fi
+            done
+            EOF
+
+            chmod +x /home/ec2-user/push-ena-metrics.sh
+            echo "* * * * * /home/ec2-user/push-ena-metrics.sh >> /home/ec2-user/ena.log 2>&1" | crontab -u ec2-user -
+
+Outputs:
+  InstanceId:
+    Description: ID of the EC2 instance
+    Value:
+      Ref: ENAMetricsInstance
+
+  PublicIP:
+    Description: Public IP of the EC2 instance
+    Value:
+      Fn::GetAtt:
+        - ENAMetricsInstance
+        - PublicIp
