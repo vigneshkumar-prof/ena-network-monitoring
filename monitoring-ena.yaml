@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: >
+Description: 
   Deploys an EC2 instance with a cron-based script to push ENA metrics
   (like bandwidth and PPS allowance exceeded) to CloudWatch.
 
