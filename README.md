@@ -4,18 +4,18 @@
 
 This project helps monitor EC2 ENA (Elastic Network Adapter) metrics and push them to CloudWatch for proactive observability.
 
-## 🔍 What it Does
+##  What it Does
 
 - Scrapes key ENA metrics using `ethtool`
 - Sends them to AWS CloudWatch under a custom namespace
 - Enables visibility into network throttling events (e.g., bandwidth or PPS exceedance)
 
-## 📦 Files
+##  Files
 
 - `scripts/push-ena-metrics.sh`: Bash script to collect and send ENA metrics
 - `cloudformation/monitoring-ena.yaml`: CloudFormation template to launch an EC2 instance with IAM permissions and crontab scheduling
 
-## 🚀 How to Use
+##  How to Use
 
 1. **Deploy via CloudFormation**
    - Update the `VpcId` and `KeyName` parameters.
@@ -31,7 +31,7 @@ This project helps monitor EC2 ENA (Elastic Network Adapter) metrics and push th
      - `conntrack_allowance_exceeded`
      - `linklocal_allowance_exceeded`
 
-## 🛡 IAM Permissions
+##  IAM Permissions
 
 The EC2 instance is granted permissions to send custom metrics via `cloudwatch:PutMetricData`.
 
@@ -39,6 +39,3 @@ The EC2 instance is granted permissions to send custom metrics via `cloudwatch:P
 
 Once deployed, go to **CloudWatch > Metrics > Custom Namespaces > EC2/ENA** to see metrics per instance.
 
-## 💬 Credits
-
-Inspired by [Pinterest Engineering Blog](https://medium.com/@Pinterest_Engineering/handling-network-throttling-with-aws-ec2-at-pinterest-fda0efc21083)
